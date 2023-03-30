@@ -1,0 +1,1 @@
+from oracledb_file_transfer import lambda_handler
