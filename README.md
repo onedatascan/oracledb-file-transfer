@@ -7,7 +7,7 @@ oracledirectory://username:password@host:port/database?dir=DATA_PUMP_DIR&file=fo
 oracledirectory://username:password@host:port/database?file=/opt/oracle/oradata/foo.dmp
 ```
 
-if a URI format is used that does not include all of the database connection parameters an `oracledb.Connection` can be passed as a `transport_params` argument or any of the required connection args can be passed.
+If a URI format is used that does not include all of the database connection parameters an `oracledb.Connection` can be passed as a `transport_params` argument or any of the required connection args can be passed.
 
 
 ## Package Usage
