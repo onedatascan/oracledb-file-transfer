@@ -20,9 +20,11 @@ build: activate-venv
 
 docker-build:
 	docker build -t ${LAMBDA_DOCKER_REPO}:latest -f lambda/Dockerfile .
+	docker build -t ${CLI_DOCKER_REPO}:latest -f cli/Dockerfile .
 
 docker-push:
 	docker push ${LAMBDA_DOCKER_REPO}:latest
+	docker push ${CLI_DOCKER_REPO}:latest
 
 # Expects an Oracle database
 test: activate-venv

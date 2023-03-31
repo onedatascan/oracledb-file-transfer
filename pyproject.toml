@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-oracledb-datapump = "oracledb_file_transfer.__main__:main"
+oracledb-file-transfer = "oracledb_file_transfer.__main__:main"
 
 [tool.black]
 target-version = ['py37']
