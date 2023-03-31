@@ -3,9 +3,13 @@ import smart_open.transport
 import smart_open.s3
 
 from . import oracledirectory
-from .oracledirectory import RAW_MAX_BYTES as CHUNK_SIZE
+from .oracledirectory import SCHEMES, RAW_MAX_BYTES as CHUNK_SIZE
 
 smart_open.transport.register_transport(oracledirectory)
+# Include the "oracledirectory" scheme in error messages
+smart_open.transport.SUPPORTED_SCHEMES = (
+    smart_open.transport.SUPPORTED_SCHEMES + SCHEMES
+)
 
 builtin_open = open
 open = smart_open.open
