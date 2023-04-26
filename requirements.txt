@@ -1,2 +1,2 @@
 oracledb==1.2.0
-smart-open[s3]==6.3.0
+smart-open[s3, ssh]==6.3.0
