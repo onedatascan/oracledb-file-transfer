@@ -20,10 +20,10 @@ from aws_lambda_powertools.utilities.parser import (
     root_validator,
 )
 from aws_lambda_powertools.utilities.parser.pydantic import (
+    AnyUrl,
     Extra,
     Json,
     parse_obj_as,
-    AnyUrl,
 )
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
@@ -31,10 +31,12 @@ import oracledb_file_transfer
 
 # This is done to ensure DEBUG logging from imported modules does not dump secrets to
 # the log stream.
-logging.config.dictConfig({
-    'version': 1,
-    'disable_existing_loggers': bool(os.getenv("DISABLE_EXISTING_LOGGERS", True)),
-})
+logging.config.dictConfig(
+    {
+        "version": 1,
+        "disable_existing_loggers": bool(os.getenv("DISABLE_EXISTING_LOGGERS", True)),
+    }
+)
 logger = Logger(service="oracledb-file-transfer", level=os.getenv("LOG_LEVEL", "INFO"))
 copy_config_to_registered_loggers(logger)
 
