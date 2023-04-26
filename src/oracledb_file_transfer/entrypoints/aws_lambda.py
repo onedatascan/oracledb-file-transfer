@@ -5,12 +5,14 @@ import functools
 import json
 import logging.config
 import os
+import urllib.parse
 from http import HTTPStatus
 from time import perf_counter
 from typing import Final, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 from aws_lambda_powertools import Logger
 from aws_lambda_powertools.logging.utils import copy_config_to_registered_loggers
+from aws_lambda_powertools.utilities import parameters
 from aws_lambda_powertools.utilities.parser import (
     BaseModel,
     ValidationError,
@@ -18,6 +20,7 @@ from aws_lambda_powertools.utilities.parser import (
     models,
     parse,
     root_validator,
+    validator,
 )
 from aws_lambda_powertools.utilities.parser.pydantic import (
     AnyUrl,
@@ -45,6 +48,7 @@ MEGABYTE: Final[int] = 1024 * 1024
 DEFAULT_CHUNK_SIZE: Final[int] = int(
     os.getenv("DEFAULT_CHUNK_SIZE", MEGABYTE)
 )
+RESOLVE_SECRETS: Final[bool] = bool(os.getenv("RESOLVE_SECRETS", True))
 
 json_types: TypeAlias = str | int | dict | list | bool | float | None
 json_str: TypeAlias = str
@@ -103,9 +107,46 @@ class Uri(AnyUrl):
 
 
 class RequestModel(BaseModel):
+    source_secret: str | None
+    destination_secret: str | None
     source_uri: Uri
     destination_uri: Uri
     compression_opt: str | None
+
+    @validator("source_uri", pre=True)
+    def inject_source_secret(cls, v, values):
+        if "source_secret" in values:
+            if RESOLVE_SECRETS:
+                secret = values["source_secret"]
+                try:
+                    return uri_secret_injector(v, secret)
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to fetch or parse secret: {secret} "
+                        f"reason: {str(e)}"
+                    ) from e
+            else:
+                logger.warning(
+                    "A secret parameter was received but secret resolution is disabled"
+                )
+        return v
+
+    @validator("destination_uri", pre=True)
+    def inject_destination_secret(cls, v, values):
+        if "destination_secret" in values:
+            if RESOLVE_SECRETS:
+                secret = values["destination_secret"]
+                try:
+                    return uri_secret_injector(v, secret)
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to fetch or parse secret: {secret}" f"reason: {str(e)}"
+                    ) from e
+            else:
+                logger.warning(
+                    "A secret parameter was received but secret resolution is disabled"
+                )
+        return v
 
 
 class Envelope(BaseModel, extra=Extra.allow):
@@ -150,6 +191,95 @@ def copy(
 
     took = perf_counter() - start
     return bytes_copied, took
+
+
+def uri_secret_injector(uri: str, secret: str | None) -> str:
+    """
+    Overrides or sets any fields in the URI with fields found
+    in the provided secret. Secret should be of the form:
+        {
+            "username": "system",
+            "password": "manager",
+            "hostname": "host1",    // optional
+            "database": "orclpdb1", // optional
+            "port": 1521            // optional
+        }
+    Some of these fields are specific to certain URI types and
+    will only be applied if the URI scheme is applicable.
+
+    For an oracledirectory scheme, the URI should be of the form:
+        oracledirectory://DATA_PUMP_DIR/foo.dmp
+        oracledirectory:///opt/oracle/oradata/admin/ORCLCDB/dpdump/foo.dmp
+    """
+
+    def get_secret_value(secret: str) -> dict:
+        secret_value = parameters.get_secret(secret, transform="json")
+        if isinstance(secret_value, dict):
+            return secret_value
+        else:
+            raise ValueError("Unexpected secret value type:", type(secret_value))
+
+    def uri_to_dict(uri) -> dict:
+        split_uri = urllib.parse.urlsplit(uri)
+        uri_dict = split_uri._asdict()
+        uri_dict["username"] = split_uri.username
+        uri_dict["password"] = split_uri.password
+        uri_dict["hostname"] = split_uri.hostname
+        uri_dict["port"] = split_uri.port
+
+        return uri_dict
+
+    def dict_to_uri(uri_dict: dict) -> str:
+        scheme = uri_dict.get("scheme", "")
+
+        netloc = ""
+        if uri_dict.get("username"):
+            netloc += uri_dict["username"]
+        if uri_dict.get("password"):
+            netloc += ":" + uri_dict["password"]
+        if uri_dict.get("hostname"):
+            netloc += "@" + uri_dict["hostname"]
+        if uri_dict.get("port"):
+            netloc += ":" + str(uri_dict["port"])
+
+        if scheme == "oracledirectory":
+            if uri_dict.get("database"):
+                path = uri_dict["database"]
+            elif uri_dict.get("servicename"):
+                path = uri_dict["servicename"]
+            else:
+                path = uri_dict.get("path", "")
+
+            query_parts = []
+            if uri_dict.get("netloc"):
+                query_parts.append(f"dir={uri_dict['netloc']}")
+            if uri_dict.get("path"):
+                if uri_dict.get("netloc"):
+                    query_parts.append(f"file={uri_dict['path'].lstrip('/')}")
+                else:
+                    query_parts.append(f"file={uri_dict['path']}")
+            query = "&".join(query_parts)
+        else:
+            path = uri_dict.get("path", "")
+            query = uri_dict.get("query", "")
+
+        fragment = uri_dict.get("fragment", "")
+
+        return urllib.parse.urlunsplit((scheme, netloc, path, query, fragment))
+
+    if not secret:
+        return uri
+
+    logger.debug("Injecting secret: %s into URI: %s", secret, uri)
+
+    secret_value: dict = get_secret_value(secret)
+    uri_dict = uri_to_dict(uri)
+    uri_dict.update(secret_value)
+
+    uri_with_secret = dict_to_uri(uri_dict)
+    logger.debug("URI with secret is: %s", uri_with_secret)
+
+    return uri_with_secret
 
 
 def request_handler(event: RequestModel, context: LambdaContext) -> HTTPResponse:
