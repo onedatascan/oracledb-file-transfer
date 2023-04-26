@@ -166,6 +166,7 @@ class Envelope(BaseModel, extra=Extra.allow):
 def copy(
     source: Uri, destination: Uri, compression_opt: str | None = None
 ) -> tuple[int, float]:
+    logger.info("Copy operation %s to %s initiated", source.scheme, destination.scheme)
     start = perf_counter()
     bytes_copied = 0
 
@@ -183,11 +184,45 @@ def copy(
 
     with open_read(uri=str(source)) as f_in:
         with oracledb_file_transfer.open(str(destination), mode="wb") as f_out:
+            read_start = perf_counter()
+            logger.debug(
+                "offset=%s read %d bytes via %s",
+                bytes_copied,
+                chunk_size,
+                source.scheme,
+            )
             while chunk := f_in.read(chunk_size):
+                logger.debug(
+                    "offset=%s read took: %.6f",
+                    bytes_copied,
+                    perf_counter() - read_start,
+                )
+
+                write_start = perf_counter()
+                logger.debug(
+                    "offset=%s write %d bytes via %s",
+                    bytes_copied,
+                    chunk_size,
+                    destination.scheme,
+                )
                 f_out.write(chunk)
+                logger.debug(
+                    "offset=%s write took: %.6f",
+                    bytes_copied,
+                    perf_counter() - write_start,
+                )
+
                 bytes_copied += len(chunk)
                 if bytes_copied % (MEGABYTE * 100) == 0:
                     logger.info("Copied %dMB so far", float(bytes_copied) / MEGABYTE)
+
+                read_start = perf_counter()
+                logger.debug(
+                    "offset=%s read %d bytes via %s",
+                    bytes_copied,
+                    chunk_size,
+                    source.scheme,
+                )
 
     took = perf_counter() - start
     return bytes_copied, took
